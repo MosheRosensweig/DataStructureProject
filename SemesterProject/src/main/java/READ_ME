@@ -1,0 +1,142 @@
+Moshe Rosensweig
+Semester Project:
+
+The following documents, if completed, should describe the various pieces of My 
+semester project. (See bottom about the test)
+
+There are three main parts of this program: (1) The Table (2) The BTree (3) The parserController 
+
+	Each table has it's own indexes. In order to store a table's indexes within itself, I created
+a wrapper class I called "TablePackage". TablePackage contains a table and an array of Indices. The 
+size of the array of indices is equal to the number of columns there are per row. Column in 
+position[I] has an index (if it has and an index, it has it) in the Index array also at position I. 
+
+IMPORTANT NOTE: Throughout the entire project, I refer to "I". "I" is the term I use to refer to 
+the position of a column in a row (somewhere inside I explained why).
+
+1] Table
+	I constructed the table using rows. Each row contains a list of columns. Each column contains 
+its own rules (like Not Null etc... ). Each column also knows what position it is in its row.
+For example, a row of columns "FirstName, LastName" FirstName would know it's position is "0". 
+It stores this value as the letter "I". 
+
+	Each row contains a field "rowNumber". RowNumber represents the number of successful rows created
+at the time this row was created (including this row). For example, the 1st row would have a rowNumber
+of 1, and the 15th rows created would have a row Number of 15, even if rows were deleted before row 15
+was created (meaning, row 15 could be the 5th row in theory, if 10 rows were deleted before it was created).
+(Effectively, rowNumber serves a similar purpose as a hashcode. If I have time - I will convert this over to 
+hash.) 
+
+	The rowNumber is important, so that we can accurately find individual rows to delete, update or select 
+information from. (See the Btree below for more on this.)
+	
+	Why did you implement it this way? I decided to use the BTree to store a list of addresses of Rows connected with
+this key. For example: in the GPA table, the 4.0 column would have a reference to Moshe Rosensweig (row 1), Ploni Almoni (row 19).
+Instead of storing the actual rows, it stores their unique row number. So they key 4.0 would have a list {1,19}. Then I can just 
+use this list to pull rows out of the table.
+
+
+2] BTree
+	Each "Btree" is wrapped as an "Index". The index contains the name of the column that this column indexes.
+The tree itself functions as a btree. It starts with a root node and builds upwards. "M" is hardcoded in at 6 (but can be changed). 
+The tree has the following methods:
+	1] Put - insert a value into the tree
+	2] Get - input a key and get the value stored there if there is one
+	3] Delete - input a key and delete it's value by setting it to null
+	4] FindAt - input a key and return the node where that key should be
+	5] GetOriginalRoot - returns the original root node / the bottom left node
+Judah pointed out that it might in some instances be easier to use the tree as a sorted list. Therefore, it has some
+of the aforestated methods to enable the user to jump to a specific node and traverse the leaves as you would a sorted list.
+
+	I chose to make the BTreeNode generic so that it's value could be (for my purposes) a BTreeNode, an ArrayList<Integer>, or an 
+ArrayList<Row>. 
+
+3] The ParserController 
+	The ParserController (pc) takes a SQL query and determines what to do with it. First it identifies what type of 
+query it is. Then it processes the query. 
+
+
+Basic explanation of each class:
+	1] BTree3 - The btree
+	2] BTreeNode - Holds BTreeMaps and pointers to it's right and left node
+	3] BTreeMap - Holds a Key / Value pair
+	4] Table - Holds the information: (1) Rows (2) Table Name
+	5] Row - Holds columns
+	6] Column - Holds the (1) value (2) column name 
+	7] TablePackage - Holds a table and its indices
+	8] DataBase - has a list of TablePackages
+	9] SQLParserControl - Does most of the heavy lifting.
+	10] ResultSet - Has the TablePackage relevant to the query
+	11] ProjectException  - Used for throwing custom exceptions
+	12] SelectTable - The table object for select queries
+	
+Elaborating on Query Tactics
+	[A] Where 1st 
+			For delete, update, and Select I use a "where 1st" policy, meaning I first find all the rows that fit the where condition.
+		I do this, by recursively getting the list of relevant rows from the right operator and the list of relevant rows from the 
+		left operator and combining them (with an AND or an OR). 
+	[B] Distinct 2nd
+			After finding relevant rows, I check for Distinct conditions. The "checkDistinct" method also converts the list of row
+		addresses into their actual rows - even if the query wasn't "distinct".
+	[C] OrderBy / Functions are last
+		[i] OrderBY
+				I didn't want to write a new sorting method recursively for order bys. Instead, I took the list of Rows and put them into
+			a temporary BTree, using the, for "Order By X", X-column value as the key, and the rows with that key as it's value.
+			Then I traverse the leaves as a sorted list. I then take each key's list of rows and recursively call orderBy on it, if there
+			are more orderBy conditions.
+				After the recursion is done, I store each key's list<Row> in a list of lists<Row>. If the order by was desc, I reverse 
+			the list of list<Row>, and then take all the rows stored in the List<List<Row>>, and put them in a regular List<Row and return it.
+		[ii] Functions
+					For each function, I use a switch statement to figure out which function it is, and then return it's value.
+				-> Max and Min - Although I now realize that using the original tree for Max and Min would be super efficient, 
+				my code doesn't do so, because for all select queries, it 1st goes to the Btree to get the indices of the rows that
+				match the "Where" then it converts those into actual Rows in the distinct method. At this point I have a list of 
+				rows that already meet the aforementioned criteria, so I just have to iterate over those using the Math.max/min methods
+				which I think is faster, than making a new BTree to resort the remaining rows. 
+					When I count, I do not include null values.
+				
+Policies / Choices
+The following sections explains certain decisions I made and why.
+1] Error Handling
+	[A] Initially, I didn't think to use exceptions - so I returned null/false for values that didn't work and used an if else
+	in the caller to determine how to proceed. I realize that throwing errors could have been more helpful, as it 
+	would enable me to share more information about the issue. (If I have time, I may go back and change the policy.)
+	[B] For now, the way I handle exceptions is as follows: In the pc, I try to use each type of query, and catch two different 
+	types of exceptions. 
+		[i] Any exception I wrote and throw, are ProjectExceptions. First I try to catch one of those. If I catch one, I throw it
+		again because it is already formatted the way I want it.
+		[ii] Any exceptions that are generated by Java code are caught a wrapped with a bit more information about where the exception
+		happened - and then is rethrown.
+2] Code repetition 
+	In general I try to reduce code repetition. However, certain pieces of code needed to be copied and modified slightly to
+	accomplish a different function. IY"H I will go back and refactor those pieces of code into a more succinct version. Additionally,
+	I hope to go back and remove old commented out versions of code. Additionally, I need to refactor long methods into smaller methods.
+	
+
+Bugs:
+1] The average Method does not yet restrict it's result to the precision it started with
+2] 
+3] 
+
+//-------//
+// Test: //
+//-------//
+
+The test may be a bit annoying to read, but it's pretty straight forward.
+A series of each type of query is put through the system - I tried to test different things with each query.
+There is the option for both verbose and non-verbose testing.
+- Non-Verbose -> the default
+	1] Exceptions = they just print out on screen - although they may be delayed (probably a computer specific problem)
+	2] Update, Delete, and Insert that work - print out "Updated, new table is:"
+	3] Update / Delete that didn't change the table print out "Nothing Update (or deleted respectively)"
+	4] A select query that selects nothing prints out "No results"
+
+- Verbose: It adds the following:
+	1] Exceptions - it prints the stacktrace
+	2] Each query returns the new state of the table
+
+
+
+
+
+
